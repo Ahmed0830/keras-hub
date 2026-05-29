@@ -10,6 +10,8 @@ __pycache__/
 *.egg-info/
 dist/
 
+alt_clip_vit_l14/
+
 .coverage
 .coverage.*
 
