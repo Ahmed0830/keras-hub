@@ -7,6 +7,9 @@ since your modifications would be overwritten.
 from keras_hub.src.models.albert.albert_tokenizer import (
     AlbertTokenizer as AlbertTokenizer,
 )
+from keras_hub.src.models.alt_clip.alt_clip_tokenizer import (
+    AltCLIPTokenizer as AltCLIPTokenizer,
+)
 from keras_hub.src.models.bart.bart_tokenizer import (
     BartTokenizer as BartTokenizer,
 )

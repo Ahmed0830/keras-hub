@@ -70,6 +70,9 @@ from keras_hub.src.layers.preprocessing.start_end_packer import (
 from keras_hub.src.layers.preprocessing.video_converter import (
     VideoConverter as VideoConverter,
 )
+from keras_hub.src.models.alt_clip.alt_clip_image_converter import (
+    AltCLIPImageConverter as AltCLIPImageConverter,
+)
 from keras_hub.src.models.basnet.basnet_image_converter import (
     BASNetImageConverter as BASNetImageConverter,
 )

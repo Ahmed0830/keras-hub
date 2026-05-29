@@ -29,6 +29,24 @@ from keras_hub.src.models.albert.albert_text_classifier_preprocessor import (
 from keras_hub.src.models.albert.albert_tokenizer import (
     AlbertTokenizer as AlbertTokenizer,
 )
+from keras_hub.src.models.alt_clip.alt_clip_backbone import (
+    AltCLIPBackbone as AltCLIPBackbone,
+)
+from keras_hub.src.models.alt_clip.alt_clip_image_converter import (
+    AltCLIPImageConverter as AltCLIPImageConverter,
+)
+from keras_hub.src.models.alt_clip.alt_clip_preprocessor import (
+    AltCLIPPreprocessor as AltCLIPPreprocessor,
+)
+from keras_hub.src.models.alt_clip.alt_clip_text_encoder import (
+    AltCLIPTextEncoder as AltCLIPTextEncoder,
+)
+from keras_hub.src.models.alt_clip.alt_clip_tokenizer import (
+    AltCLIPTokenizer as AltCLIPTokenizer,
+)
+from keras_hub.src.models.alt_clip.alt_clip_vision_encoder import (
+    AltCLIPVisionEncoder as AltCLIPVisionEncoder,
+)
 from keras_hub.src.models.backbone import Backbone as Backbone
 from keras_hub.src.models.bart.bart_backbone import BartBackbone as BartBackbone
 from keras_hub.src.models.bart.bart_seq_2_seq_lm import (
