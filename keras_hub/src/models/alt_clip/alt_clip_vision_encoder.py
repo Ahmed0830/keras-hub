@@ -4,7 +4,8 @@ from keras_hub.src.models.clip.clip_vision_encoder import CLIPVisionEncoder
 
 @keras_hub_export("keras_hub.models.AltCLIPVisionEncoder")
 class AltCLIPVisionEncoder(CLIPVisionEncoder):
-    """AltCLIP vision encoder — identical architecture to CLIPVisionEncoder (ViT).
+    """AltCLIP vision encoder — identical architecture to
+       CLIPVisionEncoder (ViT).
 
     This is a ViT-based image encoder used in AltCLIP. The architecture is
     identical to `CLIPVisionEncoder`; this subclass exists to provide the

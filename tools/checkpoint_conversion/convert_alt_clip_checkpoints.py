@@ -9,6 +9,7 @@ python tools/checkpoint_conversion/convert_alt_clip_checkpoints.py \
 """
 
 import os
+import shutil
 
 import keras
 import numpy as np
@@ -206,19 +207,30 @@ def convert_weights(keras_hub_model, hf_model):
     # AltCLIP's text model uses AltRobertaModel (XLM-RoBERTa-style) inside
     # AltCLIPTextModel. HF keys:
     #   text_model.roberta.embeddings.*
-    #   text_model.roberta.encoder.layer.{i}.*  (note: "layer", not "layers")
+    #   text_model.roberta.encoder.layers.{i}.*  (plural "layers")
     #   text_model.pre_LN.*
     #   text_model.transformation.*
     text_encoder = keras_hub_model.text_encoder
     text_prefix = "text_model.roberta"
 
+    # XLM-RoBERTa always adds token_type_embeddings[type=0] to every token.
+    # Since type=0 is constant, bake it into the word embeddings so our model
+    # (which has no token_type_embedding layer) produces identical sums.
+    _type_emb_key = f"{text_prefix}.embeddings.token_type_embeddings.weight"
+    _type_bias = state_dict[_type_emb_key].cpu().numpy()[0]  # shape [hidden]
     port_weights(
         text_encoder.embeddings.token_embedding._embeddings,
         f"{text_prefix}.embeddings.word_embeddings.weight",
+        hook_fn=lambda x, _: x + _type_bias,
     )
+    # XLM-RoBERTa (fairseq convention) uses position IDs starting at 2
+    # (padding_idx=1, so real positions begin at padding_idx+1=2).
+    # Our PositionEmbedding uses 0-based indices, so we shift the table by -2
+    # so that our index 0 maps to HF's row 2, index 1 → row 3, etc.
     port_weights(
         text_encoder.embeddings.position_embedding.position_embeddings,
         f"{text_prefix}.embeddings.position_embeddings.weight",
+        hook_fn=lambda x, _: np.roll(x, -2, axis=0),
     )
     port_ln(
         text_encoder.embeddings_layer_norm,
@@ -236,42 +248,42 @@ def convert_weights(keras_hub_model, hf_model):
         # Self-attention weights in HF AltRoberta use separate query/key/value
         # Linear modules (not combined q_k_v).
         port_weights(
-            transformer_layer._self_attention_layer.query_dense.kernel,
+            transformer_layer._self_attention_layer._query_dense.kernel,
             f"{prefix}.attention.self.query.weight",
             hook_fn=lambda x, s: np.reshape(x.T, s),
         )
         port_weights(
-            transformer_layer._self_attention_layer.query_dense.bias,
+            transformer_layer._self_attention_layer._query_dense.bias,
             f"{prefix}.attention.self.query.bias",
             hook_fn=lambda x, s: np.reshape(x, s),
         )
         port_weights(
-            transformer_layer._self_attention_layer.key_dense.kernel,
+            transformer_layer._self_attention_layer._key_dense.kernel,
             f"{prefix}.attention.self.key.weight",
             hook_fn=lambda x, s: np.reshape(x.T, s),
         )
         port_weights(
-            transformer_layer._self_attention_layer.key_dense.bias,
+            transformer_layer._self_attention_layer._key_dense.bias,
             f"{prefix}.attention.self.key.bias",
             hook_fn=lambda x, s: np.reshape(x, s),
         )
         port_weights(
-            transformer_layer._self_attention_layer.value_dense.kernel,
+            transformer_layer._self_attention_layer._value_dense.kernel,
             f"{prefix}.attention.self.value.weight",
             hook_fn=lambda x, s: np.reshape(x.T, s),
         )
         port_weights(
-            transformer_layer._self_attention_layer.value_dense.bias,
+            transformer_layer._self_attention_layer._value_dense.bias,
             f"{prefix}.attention.self.value.bias",
             hook_fn=lambda x, s: np.reshape(x, s),
         )
         port_weights(
-            transformer_layer._self_attention_layer.output_dense.kernel,
+            transformer_layer._self_attention_layer._output_dense.kernel,
             f"{prefix}.attention.output.dense.weight",
             hook_fn=lambda x, s: np.reshape(x.T, s),
         )
         port_weights(
-            transformer_layer._self_attention_layer.output_dense.bias,
+            transformer_layer._self_attention_layer._output_dense.bias,
             f"{prefix}.attention.output.dense.bias",
         )
         port_ln(
@@ -351,11 +363,13 @@ def validate_output(
         images=[image, image],
         return_tensors="pt",
     )
+    hf_preprocessed = hf_inputs["pixel_values"].detach().cpu().numpy()
 
     # KerasHub preprocessing.
     images_np = np.expand_dims(np.array(image).astype("float32"), axis=0)
     images_np = np.concatenate([images_np, images_np], axis=0)
     keras_images = keras_image_converter(images_np)
+    keras_preprocessed = keras.ops.convert_to_numpy(keras_images)
     keras_preprocessor = AltCLIPPreprocessor(keras_tokenizer)
     keras_token_ids = keras_preprocessor({"prompts": text, "images": None})[
         "token_ids"
@@ -371,9 +385,14 @@ def validate_output(
     hf_inputs["input_ids"] = torch.from_numpy(
         keras.ops.convert_to_numpy(keras_token_ids)
     )
+    # Keep attention_mask in sync with the replaced input_ids.
+    # The original HF-tokenized mask may have a different sequence length.
+    # Pad token for XLM-R (and AltCLIP text encoder) is ID 1.
+    hf_inputs["attention_mask"] = (hf_inputs["input_ids"] != 1).long()
 
     with torch.no_grad():
         hf_outputs = hf_model(**hf_inputs)
+
     hf_logits = hf_outputs.logits_per_image.cpu().numpy()
 
     keras_outputs = keras_model(
@@ -384,54 +403,66 @@ def validate_output(
     )
     keras_logits = keras.ops.convert_to_numpy(keras_outputs["vision_logits"])
 
-    print("HF vision logits:", hf_logits)
-    print("Keras vision logits:", keras_logits)
+    print("🔶 Keras output:", keras_logits[0])
+    print("🔶 HF output:", hf_logits[0])
+    modeling_diff = np.mean(np.abs(keras_logits - hf_logits))
+    print("🔶 Modeling difference:", modeling_diff)
+    preprocessing_diff = np.mean(
+        np.abs(keras_preprocessed - np.transpose(hf_preprocessed, (0, 2, 3, 1)))
+    )
+    print("🔶 Preprocessing difference:", preprocessing_diff)
+
     np.testing.assert_allclose(hf_logits, keras_logits, atol=1e-3)
     print("✓ Output validation passed.")
 
 
 def main(_):
-    hf_preset = PRESET_MAP[FLAGS.preset]
-    preset_name = FLAGS.preset
+    if FLAGS.preset not in PRESET_MAP.keys():
+        raise ValueError(
+            f"Invalid preset {FLAGS.preset}. Must be one of "
+            f"{','.join(PRESET_MAP.keys())}"
+        )
+    preset = FLAGS.preset
+    hf_preset = PRESET_MAP[preset]
 
-    print(f"\n-> Loading HuggingFace model '{hf_preset}'...")
+    if os.path.exists(preset):
+        shutil.rmtree(preset)
+    os.makedirs(preset)
+
+    print(f"🏃 Converting {preset}")
+
     hf_model = AltCLIPModel.from_pretrained(
         hf_preset, token=True, attn_implementation="eager"
     )
     hf_model.eval()
     hf_processor = AltCLIPProcessor.from_pretrained(hf_preset, token=True)
 
-    print("-> Converting model architecture...")
     keras_model = convert_model(hf_model)
-
-    print("-> Porting weights...")
-    convert_weights(keras_model, hf_model)
-
-    print("-> Converting image converter...")
+    keras_model.summary()
     keras_image_converter = convert_image_converter(hf_processor)
-
-    print("-> Converting tokenizer...")
     keras_tokenizer = convert_tokenizer(hf_preset)
+    print("✅ KerasHub model loaded.")
 
-    # print("-> Validating outputs...")
-    # validate_output(
-    #     keras_model,
-    #     keras_image_converter,
-    #     keras_tokenizer,
-    #     hf_model,
-    #     hf_processor,
-    # )
+    convert_weights(keras_model, hf_model)
+    print("✅ Weights converted.")
 
-    keras_model.save_to_preset(f"./{preset_name}")
-    keras_image_converter.save_to_preset(f"./{preset_name}")
-    keras_tokenizer.save_to_preset(f"./{preset_name}")
-    print(f"Preset saved to ./{preset_name}.")
+    validate_output(
+        keras_model,
+        keras_image_converter,
+        keras_tokenizer,
+        hf_model,
+        hf_processor,
+    )
+    print("✅ Output validated.")
+
+    keras_model.save_to_preset(f"./{preset}")
+    keras_image_converter.save_to_preset(f"./{preset}")
+    keras_tokenizer.save_to_preset(f"./{preset}")
+    print(f"🏁 Preset saved to ./{preset}.")
 
     if FLAGS.upload_uri:
-        keras_hub.upload_preset(uri=FLAGS.upload_uri, preset=f"./{preset_name}")
-        print(f"Preset uploaded to {FLAGS.upload_uri}.")
-
-    print("Done.")
+        keras_hub.upload_preset(uri=FLAGS.upload_uri, preset=f"./{preset}")
+        print(f"🏁 Preset uploaded to {FLAGS.upload_uri}.")
 
 
 if __name__ == "__main__":

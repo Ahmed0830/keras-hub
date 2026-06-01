@@ -32,9 +32,6 @@ from keras_hub.src.models.albert.albert_tokenizer import (
 from keras_hub.src.models.alt_clip.alt_clip_backbone import (
     AltCLIPBackbone as AltCLIPBackbone,
 )
-from keras_hub.src.models.alt_clip.alt_clip_image_converter import (
-    AltCLIPImageConverter as AltCLIPImageConverter,
-)
 from keras_hub.src.models.alt_clip.alt_clip_preprocessor import (
     AltCLIPPreprocessor as AltCLIPPreprocessor,
 )

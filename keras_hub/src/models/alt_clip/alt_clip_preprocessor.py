@@ -61,7 +61,10 @@ class AltCLIPPreprocessor(CausalLMPreprocessor):
     # Tokenize a batch of sentences and preprocess a batch of images.
     preprocessor(
         {
-            "prompts": ["The quick brown fox jumped.", "一只棕色的狐狸跳过了。"],
+            "prompts": [
+                "The quick brown fox jumped.",
+                "一只棕色的狐狸跳过了。"
+            ],
             "images": np.ones(shape=(2, 123, 123, 3)),
         }
     )
