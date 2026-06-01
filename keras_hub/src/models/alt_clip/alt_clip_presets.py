@@ -12,6 +12,6 @@ backbone_presets = {
             "params": 0,  # fill in after conversion
             "path": "alt_clip",
         },
-        "kaggle_handle": "https://www.kaggle.com/models/adamda0830/alt-clip/1",
+        "kaggle_handle": "kaggle://adamda0830/alt-clip/keras/alt_clip_vit_l14",
     }
 }
